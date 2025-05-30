@@ -1,103 +1,90 @@
+# main.py
 import os
 import asyncio
 from flask import Flask, request, render_template, redirect, url_for, flash, session
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 from openai import OpenAI
-from flask import session
+from utils import clean_post_text, generate_post_heading, extract_post_images, save_and_upload_images
 
-from utils import clean_post_text, save_images, extract_post_images, generate_post_heading
-
-# Google API imports
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 
-# Allow OAuthlib to run on HTTP (local dev only, remove for production)
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
-
 load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "your-secret-key")
 
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# Google OAuth2 setup
-SCOPES = ['https://www.googleapis.com/auth/documents']
+SCOPES = [
+    'https://www.googleapis.com/auth/drive',
+    'https://www.googleapis.com/auth/drive.file',
+    'https://www.googleapis.com/auth/documents'
+]
+
 CLIENT_SECRETS_FILE = 'credentials.json'
 TOKEN_FILE = 'token.json'
 
 def get_credentials():
-    creds = None
     if os.path.exists(TOKEN_FILE):
         creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-    # If no valid credentials, return None (user needs to authenticate)
-    if not creds or not creds.valid:
-        return None
-    return creds
+        if creds and creds.valid:
+            return creds
+    return None
 
-def save_credentials(creds):
-    with open(TOKEN_FILE, 'w') as token:
-        token.write(creds.to_json())
-
-def insert_text_to_doc(doc_id, heading, body, image_paths):
-    creds = get_credentials()
-    if not creds:
-        return False, "Google credentials not found or expired. Please authenticate."
-
+def insert_text_and_images(doc_id, heading, body, image_urls, failed_links, creds):
     try:
         service = build('docs', 'v1', credentials=creds)
         doc = service.documents().get(documentId=doc_id).execute()
-        end_index = doc.get('body').get('content')[-1].get('endIndex', 1)
+        content = doc.get('body').get('content')
+        end_index = content[-1].get('endIndex', 1)
 
         requests = []
 
+        current_index = end_index - 1
+
         # Insert heading
-        requests.append({
-            'insertText': {
-                'location': {'index': end_index - 1},
-                'text': heading + '\n\n'
-            }
-        })
-        requests.append({
-            'updateParagraphStyle': {
-                'range': {
-                    'startIndex': end_index - 1,
-                    'endIndex': end_index - 1 + len(heading) + 2
-                },
-                'paragraphStyle': {
-                    'namedStyleType': 'HEADING_1'
-                },
-                'fields': 'namedStyleType'
-            }
-        })
+        requests.append({'insertText': {'location': {'index': current_index}, 'text': heading + '\n\n'}})
+        requests.append({'updateParagraphStyle': {
+            'range': {'startIndex': current_index, 'endIndex': current_index + len(heading)},
+            'paragraphStyle': {'namedStyleType': 'HEADING_1'},
+            'fields': 'namedStyleType'
+        }})
+        current_index += len(heading) + 2
 
-        # Insert body text after heading
-        requests.append({
-            'insertText': {
-                'location': {'index': end_index - 1 + len(heading) + 2},
-                'text': body + '\n\n'
-            }
-        })
+        # Insert cleaned text
+        requests.append({'insertText': {'location': {'index': current_index}, 'text': body + '\n\n'}})
+        current_index += len(body) + 2
 
-        # Insert image URLs as clickable links
-        if image_paths:
-            images_text = "\nImages:\n"
-            for path in image_paths:
-                images_text += f"{path}\n"
+        # Insert inline images
+        for img_url in image_urls:
             requests.append({
-                'insertText': {
-                    'location': {'index': end_index - 1 + len(heading) + 2 + len(body) + 2},
-                    'text': images_text
+                'insertInlineImage': {
+                    'location': {'index': current_index},
+                    'uri': img_url,
+                    'objectSize': {
+                        'height': {'magnitude': 300, 'unit': 'PT'},
+                        'width': {'magnitude': 300, 'unit': 'PT'}
+                    }
                 }
             })
+            current_index += 1
+            requests.append({'insertText': {'location': {'index': current_index}, 'text': '\n'}})
+            current_index += 1
+
+        # Fallback links
+        for link in failed_links:
+            requests.append({'insertText': {'location': {'index': current_index}, 'text': f"{link}\n"}})
+            current_index += len(link) + 1
 
         service.documents().batchUpdate(documentId=doc_id, body={'requests': requests}).execute()
-        return True, "Content inserted successfully."
+        return True, "✅ Content inserted with images and links."
     except Exception as e:
-        return False, f"Error inserting into Google Doc: {e}"
+        return False, f"❌ Google Docs Error: {e}"
 
 async def scrape_post_content(url):
     async with async_playwright() as p:
@@ -107,12 +94,12 @@ async def scrape_post_content(url):
         await page.wait_for_selector("article", timeout=15000)
         await page.wait_for_timeout(3000)
 
-        previous_height = None
+        prev_height = None
         while True:
-            current_height = await page.evaluate("document.body.scrollHeight")
-            if previous_height == current_height:
+            curr_height = await page.evaluate("document.body.scrollHeight")
+            if prev_height == curr_height:
                 break
-            previous_height = current_height
+            prev_height = curr_height
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             await page.wait_for_timeout(1000)
 
@@ -135,19 +122,21 @@ def index():
             flash("Please provide both LinkedIn URL and Google Doc ID.", "error")
             return redirect(url_for('index'))
 
-        # Run the async scraping and processing
+        creds = get_credentials()
+        if not creds:
+            flash("You must authenticate with Google first.", "error")
+            return redirect(url_for('authorize'))
+
         raw_text, image_urls = asyncio.run(scrape_post_content(linkedin_url))
         cleaned = clean_post_text(client, raw_text)
         heading = generate_post_heading(client, cleaned)
-        saved_paths = save_images(image_urls, folder="images", prefix=linkedin_url.split("/")[-1])
 
-        # Insert content to Google Doc
-        success, message = insert_text_to_doc(google_doc_id, heading, cleaned, saved_paths)
-        if success:
-            flash("LinkedIn post content successfully inserted into Google Doc.", "success")
-        else:
-            flash(message, "error")
+        uploaded_images, failed_images = save_and_upload_images(
+            image_urls, folder="images", prefix=linkedin_url.split("/")[-1], creds=creds
+        )
 
+        success, message = insert_text_and_images(google_doc_id, heading, cleaned, uploaded_images, failed_images, creds)
+        flash(message, "success" if success else "error")
         return redirect(url_for('index'))
 
     return render_template('index.html')
@@ -161,10 +150,10 @@ def authorize():
     )
     authorization_url, state = flow.authorization_url(
         access_type='offline',
-        include_granted_scopes='true'
-        
+        include_granted_scopes='true',
+        prompt='consent'
     )
-    session['state'] = state  # Save state for OAuth callback verification
+    session['state'] = state
     return redirect(authorization_url)
 
 @app.route('/oauth2callback')
@@ -177,9 +166,12 @@ def oauth2callback():
         redirect_uri="http://localhost:5000/oauth2callback"
     )
     flow.fetch_token(authorization_response=request.url)
+
     creds = flow.credentials
-    save_credentials(creds)
-    flash("Google API credentials saved successfully. You can now insert content.", "success")
+    with open(TOKEN_FILE, 'w') as token:
+        token.write(creds.to_json())
+
+    flash("✅ Google API credentials saved successfully.", "success")
     return redirect(url_for('index'))
 
 if __name__ == "__main__":

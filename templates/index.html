@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LinkedIn Post to Google Doc</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px auto;
+            max-width: 600px;
+            padding: 0 20px;
+        }
+        h1 {
+            text-align: center;
+        }
+        form {
+            margin-top: 20px;
+        }
+        label {
+            display: block;
+            margin-top: 15px;
+            font-weight: bold;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 8px 10px;
+            margin-top: 5px;
+            box-sizing: border-box;
+            font-size: 1rem;
+        }
+        button {
+            margin-top: 20px;
+            padding: 10px 15px;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        .messages {
+            margin-top: 20px;
+        }
+        .success {
+            color: green;
+            margin-bottom: 10px;
+        }
+        .error {
+            color: red;
+            margin-bottom: 10px;
+        }
+        .authorize-btn {
+            display: inline-block;
+            margin-top: 20px;
+            background-color: #0077b5;
+            color: white;
+            text-decoration: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .authorize-btn:hover {
+            background-color: #005f8d;
+        }
+    </style>
+</head>
+<body>
+    <h1>LinkedIn Post to Google Doc</h1>
+
+    <a href="{{ url_for('authorize') }}" class="authorize-btn">Authorize Google Docs Access</a>
+
+    <form method="POST" action="{{ url_for('index') }}">
+        <label for="linkedin_url">LinkedIn Post URL</label>
+        <input type="text" id="linkedin_url" name="linkedin_url" placeholder="https://www.linkedin.com/posts/..." required />
+
+        <label for="google_doc_id">Google Doc ID</label>
+        <input type="text" id="google_doc_id" name="google_doc_id" placeholder="Document ID from Google Docs URL" required />
+
+        <button type="submit">Scrape & Insert Content</button>
+    </form>
+
+    <div class="messages">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+    </div>
+</body>
+</html>
