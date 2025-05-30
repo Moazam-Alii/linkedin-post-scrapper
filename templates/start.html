@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Step 1 – Enter Google Doc ID</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="container">
+    <h1>Step 1: Google Doc Setup</h1>
+
+    <a href="{{ url_for('authorize') }}" class="authorize-btn">🔐 Authorize Google Docs Access</a>
+
+    <form method="POST">
+        <label for="google_doc_id">Google Doc ID:</label>
+        <input type="text" name="google_doc_id" id="google_doc_id" placeholder="Enter your Google Doc ID" required>
+        <button type="submit">Continue →</button>
+    </form>
+
+    <div class="messages">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for category, message in messages %}
+                <div class="{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endwith %}
+    </div>
+</div>
+</body>
+</html>

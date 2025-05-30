@@ -8,7 +8,7 @@ def clean_post_text(client, text):
         "like", "1h", "2h", "3h", "minutes ago", "contact us"
     ]
     prompt = f"""
-You are a smart content cleaner. Given the following LinkedIn post content, extract only the useful text that seems like the main body of the post. Ignore these keywords and metadata: {', '.join(unwanted)}.
+You are a smart content cleaner. Given the following LinkedIn post content, extract only the useful text that seems like the main body of the post try not to add the comments of the post also dont add the bio of profiles. Ignore these keywords and metadata: {', '.join(unwanted)}.
 
 --- Raw Text ---
 {text}

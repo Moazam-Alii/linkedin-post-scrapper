@@ -113,33 +113,55 @@ async def scrape_post_content(url):
         return content, image_urls
 
 @app.route('/', methods=['GET', 'POST'])
-def index():
+def start():
+    if request.method == 'POST':
+        doc_id = request.form.get('google_doc_id')
+        if not doc_id:
+            flash("Please enter your Google Doc ID.", "error")
+            return redirect(url_for('start'))
+        session['doc_id'] = doc_id  # ✅ Save in session
+        return redirect(url_for('add_post'))
+
+    return render_template('start.html')
+
+
+@app.route('/add', methods=['GET', 'POST'])
+def add_post():
+    if 'doc_id' not in session:
+        flash("Please enter your Google Doc ID first.", "error")
+        return redirect(url_for('start'))
+
     if request.method == 'POST':
         linkedin_url = request.form.get('linkedin_url')
-        google_doc_id = request.form.get('google_doc_id')
-
-        if not linkedin_url or not google_doc_id:
-            flash("Please provide both LinkedIn URL and Google Doc ID.", "error")
-            return redirect(url_for('index'))
+        if not linkedin_url:
+            flash("Please enter a LinkedIn URL.", "error")
+            return redirect(url_for('add_post'))
 
         creds = get_credentials()
         if not creds:
-            flash("You must authenticate with Google first.", "error")
+            flash("Please authorize with Google.", "error")
             return redirect(url_for('authorize'))
 
-        raw_text, image_urls = asyncio.run(scrape_post_content(linkedin_url))
-        cleaned = clean_post_text(client, raw_text)
-        heading = generate_post_heading(client, cleaned)
+        try:
+            raw_text, image_urls = asyncio.run(scrape_post_content(linkedin_url))
+            cleaned = clean_post_text(client, raw_text)
+            heading = generate_post_heading(client, cleaned)
 
-        uploaded_images, failed_images = save_and_upload_images(
-            image_urls, folder="images", prefix=linkedin_url.split("/")[-1], creds=creds
-        )
+            uploaded_images, failed_images = save_and_upload_images(
+                image_urls, folder="images", prefix=linkedin_url.split("/")[-1], creds=creds
+            )
 
-        success, message = insert_text_and_images(google_doc_id, heading, cleaned, uploaded_images, failed_images, creds)
-        flash(message, "success" if success else "error")
-        return redirect(url_for('index'))
+            success, message = insert_text_and_images(
+                session['doc_id'], heading, cleaned, uploaded_images, failed_images, creds
+            )
 
-    return render_template('index.html')
+            flash("✅ Post added successfully!" if success else f"⚠️ {message}", "success" if success else "error")
+        except Exception as e:
+            flash(f"❌ Error: {e}", "error")
+
+        return redirect(url_for('add_post'))
+
+    return render_template('add_post.html')
 
 @app.route('/authorize')
 def authorize():
@@ -172,7 +194,8 @@ def oauth2callback():
         token.write(creds.to_json())
 
     flash("✅ Google API credentials saved successfully.", "success")
-    return redirect(url_for('index'))
+    return redirect(url_for('start'))
+
 
 if __name__ == "__main__":
     app.run(debug=True)
