@@ -168,7 +168,7 @@ def authorize():
     flow = Flow.from_client_secrets_file(
         CLIENT_SECRETS_FILE,
         scopes=SCOPES,
-        redirect_uri="http://localhost:5000/oauth2callback"
+        redirect_uri="https://scrapelinked.onrender.com/oauth2callback"
     )
     authorization_url, state = flow.authorization_url(
         access_type='offline',
@@ -185,7 +185,7 @@ def oauth2callback():
         CLIENT_SECRETS_FILE,
         scopes=SCOPES,
         state=state,
-        redirect_uri="http://localhost:5000/oauth2callback"
+        redirect_uri="https://scrapelinked.onrender.com/oauth2callback"
     )
     flow.fetch_token(authorization_response=request.url)
 
