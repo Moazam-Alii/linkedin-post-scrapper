@@ -8,7 +8,7 @@ def clean_post_text(client, text):
         "like", "1h", "2h", "3h", "minutes ago", "contact us"
     ]
     prompt = f"""
-You are a smart content cleaner. Given the following LinkedIn post content, extract only the useful text that seems like the main body and highlights a key consequence or takeaway of the post in the start and try not to add the comments of the post also dont add the bio of profiles. Ignore these keywords and metadata: {', '.join(unwanted)}.
+You are a smart content cleaner. Given the following LinkedIn post content, extract only the useful text that seems like the main body of the post and try not to add the comments of the post also dont add the bio of profiles.ALSO importantly add the mein basic keyfactors got from the post or like a oneliner intro of the post in the start ADD this part in the begining of the scrapped data content of post Ignore these keywords and metadata: {', '.join(unwanted)}.
 
 --- Raw Text ---
 {text}
