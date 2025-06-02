@@ -26,7 +26,7 @@ def generate_post_heading(client, cleaned_text):
     prompt = f"""
 You are an assistant that generates engaging, professional titles and intros for LinkedIn posts.
 Based on the following post content, generate a short and relevant heading.
-ALSO importantly Write a one-line summary that highlights the main idea or key takeaway of the post after the heading.
+ALSO importantly Write a one-line summary keep it very short also dont just add "intro:" before it that highlights the main idea or key takeaway of the post after the heading.
 
 --- Post Content ---
 {cleaned_text}
