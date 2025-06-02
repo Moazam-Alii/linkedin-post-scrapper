@@ -10,16 +10,13 @@ from utils import generate_post_insights
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
-from googleapiclient.discovery import build
+import subprocess
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 load_dotenv()
 
-import subprocess
-
 # Install Chromium browser on app startup (only the first run will download)
 subprocess.run(["playwright", "install", "chromium"])
-
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "your-secret-key")
@@ -43,72 +40,81 @@ def get_credentials():
             return creds
     return None
 
-def insert_text_and_images(doc_id, heading, body, image_urls, failed_links, creds):
+def insert_multiple_posts(doc_id, posts, creds):
+    """
+    posts: list of dicts with keys: heading, body, image_urls, failed_links
+    Insert all posts in one batch update.
+    """
     try:
-
-
-        insights_text = generate_post_insights(client, body)
-        insights_lines = insights_text.splitlines()
-
         service = build('docs', 'v1', credentials=creds)
         doc = service.documents().get(documentId=doc_id).execute()
         content = doc.get('body').get('content')
         end_index = content[-1].get('endIndex', 1)
-
         requests = []
-
         current_index = end_index - 1
 
-        # Insert heading
-        requests.append({'insertText': {'location': {'index': current_index}, 'text': heading + '\n\n'}})
-        requests.append({'updateParagraphStyle': {
-            'range': {'startIndex': current_index, 'endIndex': current_index + len(heading)},
-            'paragraphStyle': {'namedStyleType': 'HEADING_1'},
-            'fields': 'namedStyleType'
-        }})
-        current_index += len(heading) + 2
+        for post in posts:
+            heading = post['heading']
+            body = post['body']
+            image_urls = post['image_urls']
+            failed_links = post['failed_links']
 
+            # Generate insights for this post
+            insights_text = generate_post_insights(client, body)
+            insights_lines = insights_text.splitlines()
 
- # Insert insights directly after heading (plain lines, no heading)
-        for line in insights_lines:
-            if line.strip():
-                line_text = line.strip() + '\n'
-                requests.append({'insertText': {'location': {'index': current_index}, 'text': line_text}})
-                current_index += len(line_text)
+            # Insert heading
+            requests.append({'insertText': {'location': {'index': current_index}, 'text': heading + '\n\n'}})
+            requests.append({'updateParagraphStyle': {
+                'range': {'startIndex': current_index, 'endIndex': current_index + len(heading)},
+                'paragraphStyle': {'namedStyleType': 'HEADING_1'},
+                'fields': 'namedStyleType'
+            }})
+            current_index += len(heading) + 2
 
-        # Add spacing after insights before body
-        requests.append({'insertText': {'location': {'index': current_index}, 'text': '\n'}})
-        current_index += 1
+            # Insert insights lines
+            for line in insights_lines:
+                if line.strip():
+                    line_text = line.strip() + '\n'
+                    requests.append({'insertText': {'location': {'index': current_index}, 'text': line_text}})
+                    current_index += len(line_text)
 
-
-
-        # Insert cleaned text
-        requests.append({'insertText': {'location': {'index': current_index}, 'text': body + '\n\n'}})
-        current_index += len(body) + 2
-
-        # Insert inline images
-        for img_url in image_urls:
-            requests.append({
-                'insertInlineImage': {
-                    'location': {'index': current_index},
-                    'uri': img_url,
-                    'objectSize': {
-                        'height': {'magnitude': 300, 'unit': 'PT'},
-                        'width': {'magnitude': 300, 'unit': 'PT'}
-                    }
-                }
-            })
-            current_index += 1
+            # Spacing after insights
             requests.append({'insertText': {'location': {'index': current_index}, 'text': '\n'}})
             current_index += 1
 
-        # Fallback links
-        for link in failed_links:
-            requests.append({'insertText': {'location': {'index': current_index}, 'text': f"{link}\n"}})
-            current_index += len(link) + 1
+            # Insert body text
+            requests.append({'insertText': {'location': {'index': current_index}, 'text': body + '\n\n'}})
+            current_index += len(body) + 2
 
+            # Insert images
+            for img_url in image_urls:
+                requests.append({
+                    'insertInlineImage': {
+                        'location': {'index': current_index},
+                        'uri': img_url,
+                        'objectSize': {
+                            'height': {'magnitude': 300, 'unit': 'PT'},
+                            'width': {'magnitude': 300, 'unit': 'PT'}
+                        }
+                    }
+                })
+                current_index += 1
+                requests.append({'insertText': {'location': {'index': current_index}, 'text': '\n'}})
+                current_index += 1
+
+            # Insert failed image links as fallback
+            for link in failed_links:
+                requests.append({'insertText': {'location': {'index': current_index}, 'text': f"{link}\n"}})
+                current_index += len(link) + 1
+
+            # Extra spacing between posts
+            requests.append({'insertText': {'location': {'index': current_index}, 'text': '\n\n'}})
+            current_index += 2
+
+        # Execute batch update
         service.documents().batchUpdate(documentId=doc_id, body={'requests': requests}).execute()
-        return True, "✅ Content inserted with images and links."
+        return True, "✅ All posts inserted successfully."
     except Exception as e:
         return False, f"❌ Google Docs Error: {e}"
 
@@ -142,52 +148,71 @@ async def scrape_post_content(url):
 def start():
     if request.method == 'POST':
         doc_id = request.form.get('google_doc_id')
+        num_urls = request.form.get('num_urls')
+
         if not doc_id:
             flash("Please enter your Google Doc ID.", "error")
             return redirect(url_for('start'))
-        session['doc_id'] = doc_id  # ✅ Save in session
-        return redirect(url_for('add_post'))
+
+        try:
+            num_urls = int(num_urls)
+            if num_urls < 1 or num_urls > 20:
+                flash("Number of URLs must be between 1 and 20.", "error")
+                return redirect(url_for('start'))
+        except:
+            flash("Please enter a valid number for number of URLs.", "error")
+            return redirect(url_for('start'))
+
+        session['doc_id'] = doc_id
+        session['num_urls'] = num_urls
+        return redirect(url_for('add_posts'))
 
     return render_template('start.html')
 
-
 @app.route('/add', methods=['GET', 'POST'])
-def add_post():
-    if 'doc_id' not in session:
-        flash("Please enter your Google Doc ID first.", "error")
+def add_posts():
+    if 'doc_id' not in session or 'num_urls' not in session:
+        flash("Please enter your Google Doc ID and number of URLs first.", "error")
         return redirect(url_for('start'))
 
+    num_urls = session['num_urls']
+    doc_id = session['doc_id']
+
     if request.method == 'POST':
-        linkedin_url = request.form.get('linkedin_url')
-        if not linkedin_url:
-            flash("Please enter a LinkedIn URL.", "error")
-            return redirect(url_for('add_post'))
+        linkedin_urls = request.form.getlist('linkedin_urls')
+        if not linkedin_urls or len(linkedin_urls) != num_urls:
+            flash(f"Please enter exactly {num_urls} LinkedIn URLs.", "error")
+            return redirect(url_for('add_posts'))
 
         creds = get_credentials()
         if not creds:
             flash("Please authorize with Google.", "error")
             return redirect(url_for('authorize'))
 
+        posts = []
         try:
-            raw_text, image_urls = asyncio.run(scrape_post_content(linkedin_url))
-            cleaned = clean_post_text(client, raw_text)
-            heading = generate_post_heading(client, cleaned)
+            for url in linkedin_urls:
+                raw_text, image_urls = asyncio.run(scrape_post_content(url))
+                cleaned = clean_post_text(client, raw_text)
+                heading = generate_post_heading(client, cleaned)
+                uploaded_images, failed_images = save_and_upload_images(
+                    image_urls, folder="images", prefix=url.split("/")[-1], creds=creds
+                )
+                posts.append({
+                    "heading": heading,
+                    "body": cleaned,
+                    "image_urls": uploaded_images,
+                    "failed_links": failed_images
+                })
 
-            uploaded_images, failed_images = save_and_upload_images(
-                image_urls, folder="images", prefix=linkedin_url.split("/")[-1], creds=creds
-            )
-
-            success, message = insert_text_and_images(
-                session['doc_id'], heading, cleaned, uploaded_images, failed_images, creds
-            )
-
-            flash("✅ Post added successfully!" if success else f"⚠️ {message}", "success" if success else "error")
+            success, message = insert_multiple_posts(doc_id, posts, creds)
+            flash(message, "success" if success else "error")
         except Exception as e:
             flash(f"❌ Error: {e}", "error")
 
-        return redirect(url_for('add_post'))
+        return redirect(url_for('add_posts'))
 
-    return render_template('add_post.html')
+    return render_template('add_posts.html', num_urls=num_urls)
 
 @app.route('/authorize')
 def authorize():
@@ -221,8 +246,6 @@ def oauth2callback():
 
     flash("✅ Google API credentials saved successfully.", "success")
     return redirect(url_for('start'))
-
- 
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))

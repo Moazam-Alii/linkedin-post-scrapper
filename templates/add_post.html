@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>ScrapeLinked – Step 2</title>
+    <title>ScrapeLinked – Add LinkedIn Posts</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -12,15 +12,17 @@
 </div>
 
 <div class="container">
-    <h1>🔗 Step 2: Add LinkedIn Post</h1>
-    <p>Paste a LinkedIn post URL below to scrape and insert it into your Google Doc.</p>
+    <h1>🔗 Step 2: Add LinkedIn Posts</h1>
+    <p>Paste the LinkedIn post URLs below to scrape and insert them into your Google Doc.</p>
 
     <a href="{{ url_for('authorize') }}" class="authorize-btn">🔄 Re-authorize Google Access</a>
 
     <form method="POST" onsubmit="showLoading()">
-        <label for="linkedin_url">LinkedIn Post URL:</label>
-        <input type="text" name="linkedin_url" id="linkedin_url" placeholder="https://www.linkedin.com/posts/..." required>
-        <button type="submit">➕ Add to Google Doc</button>
+        {% for i in range(num_urls) %}
+            <label for="linkedin_url_{{i}}">LinkedIn Post URL {{i+1}}:</label>
+            <input type="url" name="linkedin_urls" id="linkedin_url_{{i}}" placeholder="https://www.linkedin.com/posts/..." required>
+        {% endfor %}
+        <button type="submit">➕ Add All to Google Doc</button>
     </form>
 
     <form method="GET" action="{{ url_for('start') }}">
@@ -39,7 +41,7 @@
     <div class="loading-overlay" id="loadingOverlay">
         <div class="scraping-loader">
             <div class="dot-flashing"></div>
-            <div class="loading-text">Scraping your Linkedin post...</div>
+            <div class="loading-text">Scraping your Linkedin posts...</div>
         </div>
     </div>
 
