@@ -14,6 +14,12 @@ from googleapiclient.discovery import build
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 load_dotenv()
 
+import subprocess
+
+# Install Chromium browser on app startup (only the first run will download)
+subprocess.run(["playwright", "install", "chromium"])
+
+
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "your-secret-key")
 
