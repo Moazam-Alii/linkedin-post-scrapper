@@ -2,18 +2,24 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Step 1 – Enter Google Doc ID</title>
+    <title>ScrapeLinked – Step 1</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+<div class="brand-header">
+    <h2>🚀 ScrapeLinked</h2>
+    <span class="tagline">Turn LinkedIn posts into polished Google Docs</span>
+</div>
+
 <div class="container">
-    <h1>Step 1: Google Doc Setup</h1>
+    <h1>📄 Step 1: Google Doc Setup</h1>
+    <p>Start by authorizing access and entering your Google Doc ID to prepare your document.</p>
 
     <a href="{{ url_for('authorize') }}" class="authorize-btn">🔐 Authorize Google Docs Access</a>
 
     <form method="POST">
         <label for="google_doc_id">Google Doc ID:</label>
-        <input type="text" name="google_doc_id" id="google_doc_id" placeholder="Enter your Google Doc ID" required>
+        <input type="text" name="google_doc_id" id="google_doc_id" placeholder="Paste your Google Doc ID here..." required>
         <button type="submit">Continue →</button>
     </form>
 

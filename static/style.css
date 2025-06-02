@@ -4,15 +4,33 @@ body {
     margin: 0;
     padding: 40px 20px;
     display: flex;
-    justify-content: center;
-    align-items: flex-start;
+    flex-direction: column;
+    align-items: center;
 }
 
+/* Branding */
+.brand-header {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.brand-header h2 {
+    font-size: 2rem;
+    color: #0077b5;
+    margin-bottom: 5px;
+}
+
+.brand-header .tagline {
+    font-size: 0.95rem;
+    color: #666;
+}
+
+/* Main Container */
 .container {
     background: #fff;
     padding: 30px 40px;
     border-radius: 12px;
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
     width: 100%;
     max-width: 600px;
     position: relative;
@@ -20,12 +38,15 @@ body {
 
 h1 {
     margin-top: 0;
-    font-size: 1.8rem;
+    font-size: 2rem;
     color: #2b3e50;
+    margin-bottom: 10px;
 }
 
 p {
     color: #666;
+    margin-bottom: 20px;
+    font-size: 1rem;
 }
 
 label {
@@ -80,6 +101,7 @@ button.secondary:hover {
     border-radius: 6px;
     font-weight: bold;
     margin-bottom: 20px;
+    transition: background 0.3s ease;
 }
 
 .authorize-btn:hover {
@@ -108,13 +130,13 @@ button.secondary:hover {
     margin-bottom: 12px;
 }
 
-/* Loader */
+/* Scraping Loader */
 .loading-overlay {
     display: none;
     position: absolute;
     top: 0; left: 0;
     width: 100%; height: 100%;
-    background: rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, 0.9);
     border-radius: 12px;
     z-index: 1000;
     justify-content: center;
@@ -126,22 +148,37 @@ button.secondary:hover {
     display: flex;
 }
 
-.spinner {
-    width: 40px;
-    height: 40px;
-    border: 6px solid #ccc;
-    border-top: 6px solid #0077b5;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-    margin-bottom: 10px;
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
+.scraping-loader {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
 
 .loading-text {
     font-weight: bold;
     font-size: 1.1rem;
     color: #333;
+    margin-top: 12px;
+}
+
+/* Dot-flashing animation */
+.dot-flashing {
+    position: relative;
+    width: 12px;
+    height: 12px;
+    border-radius: 6px;
+    background-color: #0077b5;
+    color: #0077b5;
+    animation: dot-flashing 1s infinite linear alternate;
+    animation-delay: 0.5s;
+}
+
+@keyframes dot-flashing {
+    0% {
+        background-color: #0077b5;
+    }
+    50%,
+    100% {
+        background-color: #cce5f6;
+    }
 }

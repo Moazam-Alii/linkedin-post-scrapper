@@ -2,14 +2,20 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Step 2 – Add LinkedIn Post</title>
+    <title>ScrapeLinked – Step 2</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-<div class="container">
-    <h1>Step 2: Add LinkedIn Post</h1>
+<div class="brand-header">
+    <h2>🚀 ScrapeLinked</h2>
+    <span class="tagline">Turn LinkedIn posts into polished Google Docs</span>
+</div>
 
-    <a href="{{ url_for('authorize') }}" class="authorize-btn">🔐 Re-authorize Google Access</a>
+<div class="container">
+    <h1>🔗 Step 2: Add LinkedIn Post</h1>
+    <p>Paste a LinkedIn post URL below to scrape and insert it into your Google Doc.</p>
+
+    <a href="{{ url_for('authorize') }}" class="authorize-btn">🔄 Re-authorize Google Access</a>
 
     <form method="POST" onsubmit="showLoading()">
         <label for="linkedin_url">LinkedIn Post URL:</label>
@@ -29,17 +35,19 @@
         {% endwith %}
     </div>
 
-    <!-- Loader -->
+    <!-- Scraping Animation Loader -->
     <div class="loading-overlay" id="loadingOverlay">
-        <div class="spinner"></div>
-        <div class="loading-text">Scraping LinkedIn post...</div>
+        <div class="scraping-loader">
+            <div class="dot-flashing"></div>
+            <div class="loading-text">Scraping your LinkedIn post...</div>
+        </div>
     </div>
-</div>
 
-<script>
-    function showLoading() {
-        document.getElementById('loadingOverlay').classList.add('visible');
-    }
-</script>
+    <script>
+        function showLoading() {
+            document.getElementById('loadingOverlay').classList.add('visible');
+        }
+    </script>
+</div>
 </body>
 </html>
