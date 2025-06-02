@@ -26,7 +26,6 @@ def generate_post_heading(client, cleaned_text):
     prompt = f"""
 You are an assistant that generates engaging, professional titles and intros for LinkedIn posts.
 Based on the following post content, generate a short and relevant heading.
-ALSO importantly Write a one-line summary keep it very short also dont just add "intro:" before it that highlights the main idea or key takeaway of the post after the heading.
 
 --- Post Content ---
 {cleaned_text}
@@ -39,6 +38,26 @@ ALSO importantly Write a one-line summary keep it very short also dont just add 
         temperature=0.4
     )
     return response.choices[0].message.content.strip()
+
+def generate_post_insights(client, cleaned_text):
+    prompt = f"""
+You are a professional writing assistant. Analyze the following LinkedIn post and extract the key insights or takeaways.
+
+Respond with 3 to 5 clear, concise one-liner insights. Each insight should be a standalone line, like bullet points, and should avoid repeating the post verbatim.
+
+--- LinkedIn Post ---
+{cleaned_text}
+
+--- Insights ---
+"""
+    response = client.chat.completions.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.5
+    )
+    return response.choices[0].message.content.strip()
+
+
 
 def save_and_upload_images(image_urls, folder, prefix, creds):
     from googleapiclient.discovery import build

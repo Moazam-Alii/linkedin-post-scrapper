@@ -6,7 +6,8 @@ from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 from openai import OpenAI
 from utils import clean_post_text, generate_post_heading, extract_post_images, save_and_upload_images
-
+from utils import generate_post_insights
+from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
@@ -44,6 +45,11 @@ def get_credentials():
 
 def insert_text_and_images(doc_id, heading, body, image_urls, failed_links, creds):
     try:
+
+
+        insights_text = generate_post_insights(client, body)
+        insights_lines = insights_text.splitlines()
+
         service = build('docs', 'v1', credentials=creds)
         doc = service.documents().get(documentId=doc_id).execute()
         content = doc.get('body').get('content')
@@ -61,6 +67,20 @@ def insert_text_and_images(doc_id, heading, body, image_urls, failed_links, cred
             'fields': 'namedStyleType'
         }})
         current_index += len(heading) + 2
+
+
+ # Insert insights directly after heading (plain lines, no heading)
+        for line in insights_lines:
+            if line.strip():
+                line_text = line.strip() + '\n'
+                requests.append({'insertText': {'location': {'index': current_index}, 'text': line_text}})
+                current_index += len(line_text)
+
+        # Add spacing after insights before body
+        requests.append({'insertText': {'location': {'index': current_index}, 'text': '\n'}})
+        current_index += 1
+
+
 
         # Insert cleaned text
         requests.append({'insertText': {'location': {'index': current_index}, 'text': body + '\n\n'}})
