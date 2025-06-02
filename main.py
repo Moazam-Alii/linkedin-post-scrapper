@@ -210,9 +210,9 @@ def add_posts():
         except Exception as e:
             flash(f"❌ Error: {e}", "error")
 
-        return redirect(url_for('add_posts'))
+        return redirect(url_for('add_post'))
 
-    return render_template('add_posts.html', num_urls=num_urls)
+    return render_template('add_post.html', num_urls=num_urls)
 
 @app.route('/authorize')
 def authorize():
