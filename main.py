@@ -1,4 +1,3 @@
-# main.py
 import os
 import asyncio
 from flask import Flask, request, render_template, redirect, url_for, flash, session
@@ -41,10 +40,6 @@ def get_credentials():
     return None
 
 def insert_multiple_posts(doc_id, posts, creds):
-    """
-    posts: list of dicts with keys: heading, body, image_urls, failed_links
-    Insert all posts in one batch update.
-    """
     try:
         service = build('docs', 'v1', credentials=creds)
         doc = service.documents().get(documentId=doc_id).execute()
@@ -59,11 +54,9 @@ def insert_multiple_posts(doc_id, posts, creds):
             image_urls = post['image_urls']
             failed_links = post['failed_links']
 
-            # Generate insights for this post
             insights_text = generate_post_insights(client, body)
             insights_lines = insights_text.splitlines()
 
-            # Insert heading
             requests.append({'insertText': {'location': {'index': current_index}, 'text': heading + '\n\n'}})
             requests.append({'updateParagraphStyle': {
                 'range': {'startIndex': current_index, 'endIndex': current_index + len(heading)},
@@ -72,22 +65,18 @@ def insert_multiple_posts(doc_id, posts, creds):
             }})
             current_index += len(heading) + 2
 
-            # Insert insights lines
             for line in insights_lines:
                 if line.strip():
                     line_text = line.strip() + '\n'
                     requests.append({'insertText': {'location': {'index': current_index}, 'text': line_text}})
                     current_index += len(line_text)
 
-            # Spacing after insights
             requests.append({'insertText': {'location': {'index': current_index}, 'text': '\n'}})
             current_index += 1
 
-            # Insert body text
             requests.append({'insertText': {'location': {'index': current_index}, 'text': body + '\n\n'}})
             current_index += len(body) + 2
 
-            # Insert images
             for img_url in image_urls:
                 requests.append({
                     'insertInlineImage': {
@@ -103,16 +92,13 @@ def insert_multiple_posts(doc_id, posts, creds):
                 requests.append({'insertText': {'location': {'index': current_index}, 'text': '\n'}})
                 current_index += 1
 
-            # Insert failed image links as fallback
             for link in failed_links:
                 requests.append({'insertText': {'location': {'index': current_index}, 'text': f"{link}\n"}})
                 current_index += len(link) + 1
 
-            # Extra spacing between posts
             requests.append({'insertText': {'location': {'index': current_index}, 'text': '\n\n'}})
             current_index += 2
 
-        # Execute batch update
         service.documents().batchUpdate(documentId=doc_id, body={'requests': requests}).execute()
         return True, "✅ All posts inserted successfully."
     except Exception as e:
@@ -190,27 +176,33 @@ def add_posts():
             return redirect(url_for('authorize'))
 
         posts = []
-        try:
-            for url in linkedin_urls:
-                raw_text, image_urls = asyncio.run(scrape_post_content(url))
+
+        # Run scraping and processing asynchronously for all URLs
+        async def process_urls(urls):
+            results = []
+            for url in urls:
+                raw_text, image_urls = await scrape_post_content(url)
                 cleaned = clean_post_text(client, raw_text)
                 heading = generate_post_heading(client, cleaned)
                 uploaded_images, failed_images = save_and_upload_images(
                     image_urls, folder="images", prefix=url.split("/")[-1], creds=creds
                 )
-                posts.append({
+                results.append({
                     "heading": heading,
                     "body": cleaned,
                     "image_urls": uploaded_images,
                     "failed_links": failed_images
                 })
+            return results
 
+        try:
+            posts = asyncio.run(process_urls(linkedin_urls))
             success, message = insert_multiple_posts(doc_id, posts, creds)
             flash(message, "success" if success else "error")
         except Exception as e:
             flash(f"❌ Error: {e}", "error")
 
-        return redirect(url_for('add_post'))
+        return redirect(url_for('add_posts'))
 
     return render_template('add_post.html', num_urls=num_urls)
 
