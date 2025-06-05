@@ -129,3 +129,4 @@ async def extract_post_images(page, base_url):
                     image_urls.append(urljoin(base_url, url))
 
     return image_urls
+
