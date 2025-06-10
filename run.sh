@@ -11,7 +11,7 @@ nohup ngrok http 5000 > ngrok.log 2>&1 &
 
 sleep 5
 
-NGROK_URL=$(curl -s http://127.0.0.1:4040/api/tunnels | grep -Eo 'https://[a-z0-9]+\.ngrok.io' | head -n 1)
+NGROK_URL=$(curl -s localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url')
 
 echo "🔗 Access your app at: $NGROK_URL"
 echo "📌 Update this URL in Google OAuth console under 'Authorized redirect URIs':"
