@@ -8,6 +8,10 @@ from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 import subprocess
+from urllib.parse import urljoin
+
+def get_redirect_uri():
+    return urljoin(request.url_root, 'oauth2callback')
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 load_dotenv()
@@ -205,7 +209,7 @@ def authorize():
     flow = Flow.from_client_secrets_file(
         CLIENT_SECRETS_FILE,
         scopes=SCOPES,
-        redirect_uri=f"{BASE_URL}/oauth2callback"
+        redirect_uri=get_redirect_uri()
     )
     authorization_url, state = flow.authorization_url(
         access_type='offline',
@@ -222,7 +226,7 @@ def oauth2callback():
         CLIENT_SECRETS_FILE,
         scopes=SCOPES,
         state=state,
-        redirect_uri=f"{BASE_URL}/oauth2callback"
+        redirect_uri=get_redirect_uri()
     )
     flow.fetch_token(authorization_response=request.url)
 
