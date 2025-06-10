@@ -236,7 +236,7 @@ def oauth2callback():
     with open(TOKEN_FILE, 'w') as token:
         token.write(creds.to_json())
 
-    flash("✅ Google API credentials saved successfully.", "success")
+    flash(" Google API credentials saved successfully.", "success")
     return redirect(url_for('start'))
 
 if __name__ == "__main__":
