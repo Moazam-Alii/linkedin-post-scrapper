@@ -1,6 +1,8 @@
 import os
 import urllib.request
 from urllib.parse import urljoin
+import asyncio
+from playwright.async_api import async_playwright
 
 def clean_post_text(client, text):
     unwanted = [
@@ -8,7 +10,7 @@ def clean_post_text(client, text):
         "like", "1h", "2h", "3h", "minutes ago", "contact us"
     ]
     prompt = f"""
-You are a smart content cleaner. Given the following LinkedIn post content, extract only the useful text that seems like the main body of the post. Ignore these keywords and metadata: {', '.join(unwanted)}.
+You are a smart content cleaner. Given the following LinkedIn post content, extract only the useful text that seems like the main body of the post and try not to add the comments of the post also dont add the bio of profiles. Ignore these keywords and metadata: {', '.join(unwanted)}.
 
 --- Raw Text ---
 {text}
@@ -24,7 +26,7 @@ You are a smart content cleaner. Given the following LinkedIn post content, extr
 
 def generate_post_heading(client, cleaned_text):
     prompt = f"""
-You are an assistant that generates engaging, professional titles for LinkedIn posts.
+You are an assistant that generates engaging, professional titles and intros for LinkedIn posts.
 Based on the following post content, generate a short and relevant heading.
 
 --- Post Content ---
@@ -36,6 +38,24 @@ Based on the following post content, generate a short and relevant heading.
         model="gpt-4",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.4
+    )
+    return response.choices[0].message.content.strip()
+
+def generate_post_insights(client, cleaned_text):
+    prompt = f"""
+You are a professional writing assistant. Analyze the following LinkedIn post and extract the key insights or takeaways.
+
+Respond with 3 to 5 clear, concise one-liner insights. Each insight should be a standalone line, like bullet points, and should avoid repeating the post verbatim.
+
+--- LinkedIn Post ---
+{cleaned_text}
+
+--- Insights ---
+"""
+    response = client.chat.completions.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.5
     )
     return response.choices[0].message.content.strip()
 
@@ -109,3 +129,29 @@ async def extract_post_images(page, base_url):
                     image_urls.append(urljoin(base_url, url))
 
     return image_urls
+
+async def scrape_post_content(url):
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True, args=["--disable-gpu", "--no-sandbox"])
+        page = await browser.new_page()
+        await page.goto(url, timeout=60000)
+        await page.wait_for_selector("article", timeout=15000)
+        await page.wait_for_timeout(3000)
+
+        prev_height = None
+        while True:
+            curr_height = await page.evaluate("document.body.scrollHeight")
+            if prev_height == curr_height:
+                break
+            prev_height = curr_height
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await page.wait_for_timeout(1000)
+
+        try:
+            content = await page.inner_text("article")
+        except:
+            content = await page.inner_text("body")
+
+        image_urls = await extract_post_images(page, url)
+        await browser.close()
+        return content, image_urls

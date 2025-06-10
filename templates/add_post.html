@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ScrapeLinked – Add LinkedIn Posts</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="brand-header">
+    <h2>🚀 ScrapeLinked</h2>
+    <span class="tagline">Turn LinkedIn posts into polished Google Docs</span>
+</div>
+
+<div class="container">
+    <h1>🔗 Add LinkedIn Posts</h1>
+    <p>Paste the LinkedIn post URLs below to scrape and insert them into your Google Doc.</p>
+
+    <a href="{{ url_for('authorize') }}" class="authorize-btn">🔄 Re-authorize Google Access</a>
+
+    <form method="POST" onsubmit="showLoading()">
+        {% for i in range(num_urls) %}
+            <label for="linkedin_url_{{i}}">LinkedIn Post URL {{i+1}}:</label>
+            <input type="url" name="linkedin_urls" id="linkedin_url_{{i}}" placeholder="https://www.linkedin.com/posts/..." required>
+        {% endfor %}
+        <button type="submit">➕ Add All to Google Doc</button>
+    </form>
+
+    <form method="GET" action="{{ url_for('start') }}">
+        <button class="secondary">🔁 Start Over (New Doc)</button>
+    </form>
+
+    <div class="messages">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for category, message in messages %}
+                <div class="{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endwith %}
+    </div>
+
+    <!-- Scraping Animation Loader -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="scraping-loader">
+            <div class="dot-flashing"></div>
+            <div class="loading-text">Scraping your Linkedin posts...</div>
+        </div>
+    </div>
+
+    <script>
+        function showLoading() {
+            document.getElementById('loadingOverlay').classList.add('visible');
+        }
+    </script>
+</div>
+</body>
+</html>
