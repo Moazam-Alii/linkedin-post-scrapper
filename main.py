@@ -10,6 +10,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 import subprocess
 
+
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 load_dotenv()
 
@@ -112,8 +113,11 @@ def insert_multiple_posts(doc_id, posts, creds):
         return False, f"❌ Google Docs Error: {e}"
 
 async def scrape_post_content(url):
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+    async with async_playwright() as playwright:
+        browser = await playwright.chromium.launch(
+            headless=True,
+            args=["--disable-gpu", "--no-sandbox"]
+        )
         page = await browser.new_page()
         await page.goto(url, timeout=60000)
         await page.wait_for_selector("article", timeout=15000)
