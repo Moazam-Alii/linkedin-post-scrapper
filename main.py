@@ -2,14 +2,13 @@ import os
 import asyncio
 from flask import Flask, request, render_template, redirect, url_for, flash, session
 from dotenv import load_dotenv
-from playwright.async_api import async_playwright
 from openai import OpenAI
 from utils import clean_post_text, generate_post_heading, extract_post_images, save_and_upload_images, generate_post_insights
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 import subprocess
-
+from playwright.async_api import async_playwright
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 load_dotenv()
@@ -113,16 +112,14 @@ def insert_multiple_posts(doc_id, posts, creds):
         return False, f"❌ Google Docs Error: {e}"
 
 async def scrape_post_content(url):
-    async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(
-            headless=True,
-            args=["--disable-gpu", "--no-sandbox"]
-        )
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True, args=["--disable-gpu", "--no-sandbox"])
         page = await browser.new_page()
         await page.goto(url, timeout=60000)
         await page.wait_for_selector("article", timeout=15000)
         await page.wait_for_timeout(3000)
 
+        # Scroll to load content
         prev_height = None
         while True:
             curr_height = await page.evaluate("document.body.scrollHeight")
@@ -134,7 +131,7 @@ async def scrape_post_content(url):
 
         try:
             content = await page.inner_text("article")
-        except Exception:
+        except:
             content = await page.inner_text("body")
 
         image_urls = await extract_post_images(page, url)
@@ -198,25 +195,23 @@ def add_posts():
             flash("Please authorize with Google.", "error")
             return redirect(url_for('authorize'))
 
-        async def process_urls(urls):
-            results = []
-            for url in urls:
-                raw_text, image_urls = await scrape_post_content(url)
+        posts = []
+
+        try:
+            for url in linkedin_urls:
+                raw_text, image_urls = asyncio.run(scrape_post_content(url))
                 cleaned = clean_post_text(client, raw_text)
                 heading = generate_post_heading(client, cleaned)
                 uploaded_images, failed_images = save_and_upload_images(
                     image_urls, folder="images", prefix=url.split("/")[-1], creds=creds
                 )
-                results.append({
+                posts.append({
                     "heading": heading,
                     "body": cleaned,
                     "image_urls": uploaded_images,
                     "failed_links": failed_images
                 })
-            return results
 
-        try:
-            posts = asyncio.run(process_urls(linkedin_urls))
             success, message = insert_multiple_posts(doc_id, posts, creds)
             if success:
                 return redirect(f"https://docs.google.com/document/d/{doc_id}/edit")
