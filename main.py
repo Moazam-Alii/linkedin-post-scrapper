@@ -198,12 +198,14 @@ def add_posts():
 
     return render_template('add_post.html', num_urls=num_urls)
 
+# get uri from envirnment variable "BASE_URL"
+BASE_URL = os.getenv("BASE_URL")
 @app.route('/authorize')
 def authorize():
     flow = Flow.from_client_secrets_file(
         CLIENT_SECRETS_FILE,
         scopes=SCOPES,
-        redirect_uri="https://scrapelinked.onrender.com/oauth2callback"
+        redirect_uri=f"{BASE_URL}/oauth2callback"
     )
     authorization_url, state = flow.authorization_url(
         access_type='offline',
@@ -220,7 +222,7 @@ def oauth2callback():
         CLIENT_SECRETS_FILE,
         scopes=SCOPES,
         state=state,
-        redirect_uri="https://scrapelinked.onrender.com/oauth2callback"
+        redirect_uri=f"{BASE_URL}/oauth2callback"
     )
     flow.fetch_token(authorization_response=request.url)
 
@@ -232,5 +234,5 @@ def oauth2callback():
     return redirect(url_for('start'))
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", process.env.get("PORT", os.getenv)))
     app.run(host="0.0.0.0", port=port)
