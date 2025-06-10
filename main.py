@@ -4,8 +4,7 @@ from flask import Flask, request, render_template, redirect, url_for, flash, ses
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 from openai import OpenAI
-from utils import clean_post_text, generate_post_heading, extract_post_images, save_and_upload_images
-from utils import generate_post_insights
+from utils import clean_post_text, generate_post_heading, extract_post_images, save_and_upload_images, generate_post_insights
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
@@ -14,7 +13,6 @@ import subprocess
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 load_dotenv()
 
-# Install Chromium browser on app startup (only the first run will download)
 subprocess.run(["playwright", "install", "chromium"])
 
 app = Flask(__name__)
@@ -38,6 +36,15 @@ def get_credentials():
         if creds and creds.valid:
             return creds
     return None
+
+def create_new_google_doc(creds, title="Scraped LinkedIn Posts"):
+    try:
+        service = build('docs', 'v1', credentials=creds)
+        doc = service.documents().create(body={'title': title}).execute()
+        return doc['documentId']
+    except Exception as e:
+        print(f"Error creating document: {e}")
+        return None
 
 def insert_multiple_posts(doc_id, posts, creds):
     try:
@@ -134,11 +141,8 @@ async def scrape_post_content(url):
 def start():
     if request.method == 'POST':
         doc_id = request.form.get('google_doc_id')
+        create_new = request.form.get('create_new') == 'on'
         num_urls = request.form.get('num_urls')
-
-        if not doc_id:
-            flash("Please enter your Google Doc ID.", "error")
-            return redirect(url_for('start'))
 
         try:
             num_urls = int(num_urls)
@@ -147,6 +151,21 @@ def start():
                 return redirect(url_for('start'))
         except:
             flash("Please enter a valid number for number of URLs.", "error")
+            return redirect(url_for('start'))
+
+        creds = get_credentials()
+        if not creds:
+            flash("Please authorize with Google first.", "error")
+            return redirect(url_for('authorize'))
+
+        if create_new:
+            doc_id = create_new_google_doc(creds)
+            if not doc_id:
+                flash("Failed to create a new Google Doc.", "error")
+                return redirect(url_for('start'))
+
+        if not doc_id:
+            flash("Please provide or create a Google Doc.", "error")
             return redirect(url_for('start'))
 
         session['doc_id'] = doc_id
@@ -161,7 +180,7 @@ def add_posts():
         flash("Please enter your Google Doc ID and number of URLs first.", "error")
         return redirect(url_for('start'))
 
-    num_urls = session['num_urls']
+    num_urls = int(session['num_urls'])
     doc_id = session['doc_id']
 
     if request.method == 'POST':
@@ -175,9 +194,6 @@ def add_posts():
             flash("Please authorize with Google.", "error")
             return redirect(url_for('authorize'))
 
-        posts = []
-
-        # Run scraping and processing asynchronously for all URLs
         async def process_urls(urls):
             results = []
             for url in urls:
@@ -198,7 +214,10 @@ def add_posts():
         try:
             posts = asyncio.run(process_urls(linkedin_urls))
             success, message = insert_multiple_posts(doc_id, posts, creds)
-            flash(message, "success" if success else "error")
+            if success:
+                return redirect(f"https://docs.google.com/document/d/{doc_id}/edit")
+            else:
+                flash(message, "error")
         except Exception as e:
             flash(f"❌ Error: {e}", "error")
 
@@ -236,7 +255,7 @@ def oauth2callback():
     with open(TOKEN_FILE, 'w') as token:
         token.write(creds.to_json())
 
-    flash(" Google API credentials saved successfully.", "success")
+    flash("✅ Google API credentials saved successfully.", "success")
     return redirect(url_for('start'))
 
 if __name__ == "__main__":
