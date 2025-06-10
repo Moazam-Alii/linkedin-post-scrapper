@@ -1,92 +1,157 @@
 import os
+import urllib.request
+from urllib.parse import urljoin
 import asyncio
-from flask import Flask, request, render_template, jsonify
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from openai import OpenAI
-from utils import (
-    scrape_post_content,
-    clean_post_text,
-    generate_post_heading,
-    generate_post_insights,
-    save_and_upload_images
-)
+from playwright.async_api import async_playwright
 
-app = Flask(__name__)
+def clean_post_text(client, text):
+    unwanted = [
+        "followers", "reactions", "comments", "reply", "student at",
+        "like", "1h", "2h", "3h", "minutes ago", "contact us"
+    ]
+    prompt = f"""
+You are a smart content cleaner. Given the following LinkedIn post content, extract only the useful text that seems like the main body of the post and try not to add the comments of the post also dont add the bio of profiles. Ignore these keywords and metadata: {', '.join(unwanted)}.
 
-SCOPES = ["https://www.googleapis.com/auth/documents", "https://www.googleapis.com/auth/drive"]
-SERVICE_ACCOUNT_FILE = "service_account.json"
-creds = service_account.Credentials.from_service_account_file(
-    SERVICE_ACCOUNT_FILE, scopes=SCOPES
-)
+--- Raw Text ---
+{text}
 
-drive_service = build("drive", "v3", credentials=creds)
-docs_service = build("docs", "v1", credentials=creds)
-openai_client = OpenAI()
+--- Cleaned Content ---
+"""
+    response = client.chat.completions.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3
+    )
+    return response.choices[0].message.content.strip()
 
+def generate_post_heading(client, cleaned_text):
+    prompt = f"""
+You are an assistant that generates engaging, professional titles and intros for LinkedIn posts.
+Based on the following post content, generate a short and relevant heading.
 
-@app.route("/", methods=["GET"])
-def home():
-    return render_template("index.html")
+--- Post Content ---
+{cleaned_text}
 
+--- Title ---
+"""
+    response = client.chat.completions.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.4
+    )
+    return response.choices[0].message.content.strip()
 
-@app.route("/scrape", methods=["POST"])
-def scrape():
-    urls = request.form.get("urls").splitlines()
-    doc_id = request.form.get("doc_id")
-    new_doc_title = request.form.get("new_doc_title")
+def generate_post_insights(client, cleaned_text):
+    prompt = f"""
+You are a professional writing assistant. Analyze the following LinkedIn post and extract the key insights or takeaways.
 
-    if not urls:
-        return "No URLs provided", 400
+Respond with 3 to 5 clear, concise one-liner insights. Each insight should be a standalone line, like bullet points, and should avoid repeating the post verbatim.
 
-    if new_doc_title:
-        document = docs_service.documents().create(body={"title": new_doc_title}).execute()
-        doc_id = document.get("documentId")
-    elif not doc_id:
-        return "Document ID or new title is required", 400
+--- LinkedIn Post ---
+{cleaned_text}
 
-    try:
-        results = asyncio.run(process_urls_sequentially(urls, doc_id))
-        return jsonify({"doc_id": doc_id, "results": results})
-    except Exception as e:
-        return str(e), 500
+--- Insights ---
+"""
+    response = client.chat.completions.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.5
+    )
+    return response.choices[0].message.content.strip()
 
+def save_and_upload_images(image_urls, folder, prefix, creds):
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaFileUpload
 
-async def process_urls_sequentially(urls, doc_id):
-    results = []
-    for url in urls:
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+
+    drive_service = build('drive', 'v3', credentials=creds)
+
+    drive_file_urls = []
+    failed_urls = []
+
+    for i, url in enumerate(image_urls):
         try:
-            content, image_urls = await scrape_post_content(url)
-            cleaned = clean_post_text(openai_client, content)
-            heading = generate_post_heading(openai_client, cleaned)
-            insights = generate_post_insights(openai_client, cleaned)
+            ext = os.path.splitext(url)[1].split("?")[0]
+            if ext.lower() not in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
+                ext = ".jpg"
 
-            drive_urls, failed = save_and_upload_images(
-                image_urls, folder="downloads", prefix=heading, creds=creds
-            )
+            safe_prefix = "".join(c for c in prefix if c.isalnum() or c in (' ', '_')).rstrip()
+            local_path = os.path.join(folder, f"{safe_prefix}_{i+1}{ext}")
+            urllib.request.urlretrieve(url, local_path)
 
-            requests = []
-            requests.append({"insertText": {"location": {"index": 1}, "text": f"\nHeading: {heading}\n"}})
-            requests.append({"insertText": {"location": {"index": 1}, "text": f"Post: {cleaned}\n"}})
-            requests.append({"insertText": {"location": {"index": 1}, "text": f"Insights:\n{insights}\n"}})
+            file_metadata = {'name': os.path.basename(local_path), 'parents': []}
+            media = MediaFileUpload(local_path, resumable=True)
+            uploaded_file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
 
-            for image_url in drive_urls:
-                requests.append({
-                    "insertInlineImage": {
-                        "location": {"index": 1},
-                        "uri": image_url,
-                        "objectSize": {"height": {"magnitude": 300, "unit": "PT"}, "width": {"magnitude": 300, "unit": "PT"}},
-                    }
-                })
+            file_id = uploaded_file.get('id')
+            drive_service.permissions().create(
+                fileId=file_id,
+                body={"type": "anyone", "role": "reader"},
+                fields='id'
+            ).execute()
 
-            docs_service.documents().batchUpdate(documentId=doc_id, body={"requests": list(reversed(requests))}).execute()
-            results.append({"url": url, "status": "success", "images": len(drive_urls), "failed_images": len(failed)})
-
+            drive_url = f"https://drive.google.com/uc?id={file_id}"
+            drive_file_urls.append(drive_url)
         except Exception as e:
-            results.append({"url": url, "status": "error", "error": str(e)})
+            print(f"Failed to process {url}: {e}")
+            failed_urls.append(url)
 
-    return results
+    return drive_file_urls, failed_urls
 
+async def extract_post_images(page, base_url):
+    image_urls = []
+    for _ in range(3):
+        await page.mouse.wheel(0, 500)
+        await page.wait_for_timeout(1000)
 
-if __name__ == "__main__":
-    app.run(debug=True, port=int(os.environ.get("PORT", 5000)))
+    images = await page.locator("article img").all()
+    for img in images:
+        src = await img.get_attribute("src") or ""
+        alt = (await img.get_attribute("alt") or "").lower()
+        class_name = (await img.get_attribute("class") or "").lower()
+        keywords = ["profile", "avatar", "banner", "emoji", "icon", "logo"]
+        if not src or src.startswith("data:image"):
+            continue
+        if any(k in src.lower() for k in keywords) or any(k in alt for k in keywords) or any(k in class_name for k in keywords):
+            continue
+        if "media.licdn.com" in src and src not in image_urls:
+            image_urls.append(urljoin(base_url, src))
+
+    picture_sources = await page.locator("article picture source").all()
+    for source in picture_sources:
+        srcset = await source.get_attribute("srcset") or ""
+        for src_part in srcset.split(","):
+            url = src_part.strip().split(" ")[0]
+            if url and "media.licdn.com" in url and url not in image_urls:
+                if not any(k in url.lower() for k in ["profile", "avatar", "banner", "emoji", "icon", "logo"]):
+                    image_urls.append(urljoin(base_url, url))
+
+    return image_urls
+
+async def scrape_post_content(url):
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True, args=["--disable-gpu", "--no-sandbox"])
+        page = await browser.new_page()
+        await page.goto(url, timeout=60000)
+        await page.wait_for_selector("article", timeout=15000)
+        await page.wait_for_timeout(3000)
+
+        prev_height = None
+        while True:
+            curr_height = await page.evaluate("document.body.scrollHeight")
+            if prev_height == curr_height:
+                break
+            prev_height = curr_height
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await page.wait_for_timeout(1000)
+
+        try:
+            content = await page.inner_text("article")
+        except:
+            content = await page.inner_text("body")
+
+        image_urls = await extract_post_images(page, url)
+        await browser.close()
+        return content, image_urls
