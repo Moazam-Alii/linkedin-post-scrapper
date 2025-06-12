@@ -3,7 +3,11 @@ import asyncio
 from flask import Flask, request, render_template, redirect, url_for, flash, session
 from dotenv import load_dotenv
 from openai import OpenAI
-from utils import clean_post_text, generate_post_heading, extract_post_images, save_and_upload_images, generate_post_insights, scrape_post_content
+from utils import (
+    clean_post_text, generate_post_heading, extract_post_images,
+    save_and_upload_images, generate_post_insights,
+    scrape_post_content, process_one_by_one, insert_multiple_posts
+)
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
@@ -44,71 +48,6 @@ def create_new_google_doc(creds, title="Scraped LinkedIn Posts"):
     except Exception as e:
         print(f"Error creating document: {e}")
         return None
-
-def insert_multiple_posts(doc_id, posts, creds):
-    try:
-        service = build('docs', 'v1', credentials=creds)
-        doc = service.documents().get(documentId=doc_id).execute()
-        content = doc.get('body').get('content')
-        end_index = content[-1].get('endIndex', 1)
-        requests = []
-        current_index = end_index - 1
-
-        for post in posts:
-            heading = post['heading']
-            body = post['body']
-            image_urls = post['image_urls']
-            failed_links = post['failed_links']
-
-            insights_text = generate_post_insights(client, body)
-            insights_lines = insights_text.splitlines()
-
-            requests.append({'insertText': {'location': {'index': current_index}, 'text': heading + '\n\n'}})
-            requests.append({'updateParagraphStyle': {
-                'range': {'startIndex': current_index, 'endIndex': current_index + len(heading)},
-                'paragraphStyle': {'namedStyleType': 'HEADING_1'},
-                'fields': 'namedStyleType'
-            }})
-            current_index += len(heading) + 2
-
-            for line in insights_lines:
-                if line.strip():
-                    line_text = line.strip() + '\n'
-                    requests.append({'insertText': {'location': {'index': current_index}, 'text': line_text}})
-                    current_index += len(line_text)
-
-            requests.append({'insertText': {'location': {'index': current_index}, 'text': '\n'}})
-            current_index += 1
-
-            requests.append({'insertText': {'location': {'index': current_index}, 'text': body + '\n\n'}})
-            current_index += len(body) + 2
-
-            for img_url in image_urls:
-                requests.append({
-                    'insertInlineImage': {
-                        'location': {'index': current_index},
-                        'uri': img_url,
-                        'objectSize': {
-                            'height': {'magnitude': 300, 'unit': 'PT'},
-                            'width': {'magnitude': 300, 'unit': 'PT'}
-                        }
-                    }
-                })
-                current_index += 1
-                requests.append({'insertText': {'location': {'index': current_index}, 'text': '\n'}})
-                current_index += 1
-
-            for link in failed_links:
-                requests.append({'insertText': {'location': {'index': current_index}, 'text': f"{link}\n"}})
-                current_index += len(link) + 1
-
-            requests.append({'insertText': {'location': {'index': current_index}, 'text': '\n\n'}})
-            current_index += 2
-
-        service.documents().batchUpdate(documentId=doc_id, body={'requests': requests}).execute()
-        return True, "✅ All posts inserted successfully."
-    except Exception as e:
-        return False, f"❌ Google Docs Error: {e}"
 
 @app.route('/', methods=['GET', 'POST'])
 def start():
@@ -167,26 +106,9 @@ def add_posts():
             flash("Please authorize with Google.", "error")
             return redirect(url_for('authorize'))
 
-        async def process_one_by_one(urls):
-            results = []
-            for url in urls:
-                raw_text, image_urls = await scrape_post_content(url)
-                cleaned = clean_post_text(client, raw_text)
-                heading = generate_post_heading(client, cleaned)
-                uploaded_images, failed_images = save_and_upload_images(
-                    image_urls, folder="images", prefix=url.split("/")[-1], creds=creds
-                )
-                results.append({
-                    "heading": heading,
-                    "body": cleaned,
-                    "image_urls": uploaded_images,
-                    "failed_links": failed_images
-                })
-            return results
-
         try:
-            posts = asyncio.run(process_one_by_one(linkedin_urls))
-            success, message = insert_multiple_posts(doc_id, posts, creds)
+            posts = asyncio.run(process_one_by_one(linkedin_urls, creds, client))
+            success, message = insert_multiple_posts(doc_id, posts, creds, client)
             if success:
                 return redirect(f"https://docs.google.com/document/d/{doc_id}/edit")
             else:
